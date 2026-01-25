@@ -58,7 +58,7 @@ class timeStampModule
 	public:
 	timeStampModule(void)
 	{
-		printf("timeStampModuleInit\n");
+		// printf("timeStampModuleInit\n");
 	#if defined(WIN32)
 		timeStampRecord::qpcCalibrate();
 	#endif
