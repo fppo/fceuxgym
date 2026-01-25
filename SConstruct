@@ -70,6 +70,7 @@ def build_project():
     source_files.extend(Glob('src/drivers/common/*.c*'))
     source_files.extend(Glob('src/input/*.cpp'))
     source_files.extend(Glob('src/utils/*.c*'))
+    source_files.extend(Glob('src/lua/src/*.c*'))
     source_files.extend(Glob('src/*.cpp'))
     source_files.extend(Glob('src/drivers/win/zlib/*.c'))
     source_files.extend(Glob('src/drivers/win/taseditor/*.cpp'))
@@ -114,3 +115,6 @@ def build_project():
 
 BUILD_TARGET = build_project()
 Default(BUILD_TARGET)
+
+for alias_name, cfg_key in ALIAS_MAP.items():
+    Alias(alias_name, BUILD_TARGET)
