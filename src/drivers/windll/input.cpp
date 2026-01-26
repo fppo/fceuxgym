@@ -140,9 +140,11 @@ int allowUDLR=0;
 
 ButtConfig GamePadConfig[4][12]={
 	//Gamepad 1
+	// A B select start up down left right Turbo A Turbo B
 	{
-		MK(F), MK(D), MK(S), MK(ENTER),
-		MK(BL_CURSORUP), MK(BL_CURSORDOWN),MK(BL_CURSORLEFT),MK(BL_CURSORRIGHT)
+		MK(G), MK(F), MK(Q), MK(E),
+		MK(W), MK(S),MK(A),MK(D),
+		MK(T), MK(R),
 	},
 
 	//Gamepad 2

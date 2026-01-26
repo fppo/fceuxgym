@@ -693,7 +693,7 @@ void BeginLoggingSequence(void)
 			MessageBox(hTracer, trace_str, "File Error", MB_OK);
 			return;
 		}
-		fprintf(LOG_FP,FCEU_NAME_AND_VERSION" - Trace Log File\n"); //mbg merge 7/19/06 changed string
+		fprintf(LOG_FP," - Trace Log File\n"); //mbg merge 7/19/06 changed string
 	} else
 	{
 		ClearTraceLogBuf();

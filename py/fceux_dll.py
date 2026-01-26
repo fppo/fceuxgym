@@ -1,5 +1,6 @@
 from ctypes import cdll, c_int, c_uint8, c_char_p, byref, POINTER
-import os
+import numpy as np
+
 
 
 class FCEuxDLL:
@@ -47,6 +48,27 @@ class FCEuxDLL:
         self.dll.get_scroll.argtypes = [POINTER(c_int), POINTER(c_int)]
         self.dll.get_scroll.restype = c_int
 
+        self.dll.save_state_to_memory.argtypes = [POINTER(c_uint8), c_int]
+        self.dll.save_state_to_memory.restype = c_int
+
+        self.dll.load_state_from_memory.argtypes = [POINTER(c_uint8), c_int]
+        self.dll.load_state_from_memory.restype = c_int
+
+        self.dll.load_rom.argtypes = [c_char_p]
+        self.dll.load_rom.restype = c_char_p
+
+        self.dll.reset.argtypes = []
+        self.dll.reset.restype = c_int
+
+        self.dll.save_state_lz4.argtypes = [POINTER(c_uint8), c_int]
+        self.dll.save_state_lz4.restype = c_int
+
+        self.dll.load_state_lz4.argtypes = [POINTER(c_uint8), c_int]
+        self.dll.load_state_lz4.restype = c_int
+
+        self.dll.load_config.argtypes = [c_char_p]
+        self.dll.load_config.restype = c_int
+
     def run_rom(self, rom_path):
         if isinstance(rom_path, str):
             rom_path = rom_path.encode('utf-8')
@@ -54,6 +76,18 @@ class FCEuxDLL:
     
     def close_rom(self):
         return self.dll.close_rom()
+
+    def load_rom(self, filename=None):
+        if filename is not None:
+            if isinstance(filename, str):
+                filename = filename.encode('utf-8')
+        result = self.dll.load_rom(filename)
+        if result:
+            return result.decode('utf-8')
+        return None
+
+    def reset(self):
+        return self.dll.reset()
 
     def read_memory(self):
         return self.dll.read_memory()
@@ -65,7 +99,14 @@ class FCEuxDLL:
         return self.dll.show_window()
 
     def read_screen(self):
-        return self.dll.read_screen()
+        ret = self.dll.read_screen()
+        if ret:
+            screen_np = np.ctypeslib.as_array(ret, shape=(224, 256))
+            mask = (screen_np >= 128) & (screen_np <= 195)
+            screen_np[~mask] = 0
+            screen_np = (screen_np - 128) * 2
+            return screen_np
+        return None
 
     def step_frame(self, frames):
         return self.dll.step_frame(frames)
@@ -93,3 +134,40 @@ class FCEuxDLL:
         if result == 0:
             return scroll_x.value, scroll_y.value
         return None, None
+
+    def save_state_to_memory(self):
+        size = 1024 * 200
+        buffer = (c_uint8 * size)()
+        result = self.dll.save_state_to_memory(buffer, size)
+        if result == 0:
+            return None
+        return np.frombuffer(buffer, dtype=np.uint8)[:result].copy()
+
+    def load_state_from_memory(self, data):
+        if data is None or len(data) == 0:
+            return -1
+        data = np.ascontiguousarray(data, dtype=np.uint8)
+        buffer = data.ctypes.data_as(POINTER(c_uint8))
+        size = len(data)
+        return self.dll.load_state_from_memory(buffer, size)
+
+    def save_state_lz4(self, compressionLevel=1):
+        size = 1024 * 200
+        buffer = (c_uint8 * size)()
+        result = self.dll.save_state_lz4(buffer, size, compressionLevel)
+        if result == 0:
+            return None
+        return np.frombuffer(buffer, dtype=np.uint8)[:result].copy()
+
+    def load_state_lz4(self, data):
+        if data is None or len(data) == 0:
+            return -1
+        data = np.ascontiguousarray(data, dtype=np.uint8)
+        buffer = data.ctypes.data_as(POINTER(c_uint8))
+        size = len(data)
+        return self.dll.load_state_lz4(buffer, size)
+
+    def load_config(self, filename):
+        if isinstance(filename, str):
+            filename = filename.encode('utf-8')
+        return self.dll.load_config(filename)

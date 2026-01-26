@@ -775,7 +775,7 @@ void FCEUI_ResetNES(void)
 	if(!FCEU_IsValidUI(FCEUI_RESET))
 		return;
 
-	FCEU_DispMessage("Command: Soft reset", 0);
+	// FCEU_DispMessage("Command: Soft reset", 0);
 	FCEU_QSimpleCommand(FCEUNPCMD_RESET);
 	ResetFrameCounter();
 }

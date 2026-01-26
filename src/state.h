@@ -31,8 +31,10 @@ bool FCEUSS_Load(const char *, bool display_message=true);
 
  //zlib values: 0 (none) through 9 (max) or -1 (default)
 bool FCEUSS_SaveMS(EMUFILE* outstream, int compressionLevel);
+bool FCEUSS_SaveMS_LZ4(EMUFILE* outstream, int compressionLevel);
 
 bool FCEUSS_LoadFP(EMUFILE* is, ENUM_SSLOADPARAMS params);
+bool FCEUSS_LoadFP_LZ4(EMUFILE* is, ENUM_SSLOADPARAMS params);
 
 extern int CurrentState;
 void FCEUSS_CheckStates(void);

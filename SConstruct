@@ -82,14 +82,15 @@ def build_project():
 
     source_files = []
     source_files.extend(Glob('src/boards/*.cpp'))
+    source_files.extend(Glob('src/boards/*.c'))
     source_files.extend(Glob('src/drivers/common/*.c*'))
     source_files.extend(Glob('src/input/*.cpp'))
     source_files.extend(Glob('src/utils/*.c*'))
     source_files.extend(Glob('src/lua/src/*.c*'))
     source_files.extend(Glob('src/*.cpp'))
+    source_files.extend(Glob('src/*.c'))
     source_files.extend(Glob('src/drivers/win/zlib/*.c'))
     source_files.extend(Glob('src/drivers/win/taseditor/*.cpp'))
-    source_files.append('src/boards/emu2413.c')
 
     if cfg.get('type') == 'dll':
         source_files.extend(Glob('src/drivers/windll/*.cpp'))

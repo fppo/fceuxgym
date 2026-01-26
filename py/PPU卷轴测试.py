@@ -8,5 +8,5 @@ rom_path = "1.nes"
 fceux.run_rom(rom_path)
 while True:
     fceux.step_frame(1)
-    memory = fceux.read_memory()
-    print(f"Memory: {memory[0]:02X}")
+    scroll_x, scroll_y = fceux.get_scroll()
+    print(f"Scroll: {scroll_x}, {scroll_y}")

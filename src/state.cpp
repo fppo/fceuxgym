@@ -28,6 +28,7 @@
 #include "utils/endian.h"
 #include "utils/memory.h"
 #include "utils/xstring.h"
+#include "lz4.h"
 #include "file.h"
 #include "fds.h"
 #include "state.h"
@@ -87,6 +88,7 @@ bool compressSavestates = true;  //By default FCEUX compresses savestates when a
 static EMUFILE_MEMORY memory_savestate;
 // temporary buffer for compressed data of a savestate
 static std::vector<uint8> compressed_buf;
+static std::vector<uint8> lz4_compress_buf;
 
 #define SFMDATA_SIZE (128)
 static SFORMAT SFMDATA[SFMDATA_SIZE];
@@ -463,6 +465,61 @@ bool FCEUSS_SaveMS(EMUFILE* outstream, int compressionLevel)
 }
 
 
+bool FCEUSS_SaveMS_LZ4(EMUFILE* outstream, int compressionLevel)
+{
+	memory_savestate.set_len(0);
+	memory_savestate.unfail();
+
+	EMUFILE* os = &memory_savestate;
+
+	uint32 totalsize = 0;
+
+	FCEUPPU_SaveState();
+	FCEUSND_SaveState();
+	totalsize=WriteStateChunk(os,1,SFCPU);
+	totalsize+=WriteStateChunk(os,2,SFCPUC);
+	totalsize+=WriteStateChunk(os,3,FCEUPPU_STATEINFO);
+	totalsize+=WriteStateChunk(os,31,FCEU_NEWPPU_STATEINFO);
+	totalsize+=WriteStateChunk(os,4,FCEUCTRL_STATEINFO);
+	totalsize+=WriteStateChunk(os,5,FCEUSND_STATEINFO);
+	if(SPreSave) SPreSave();
+	totalsize+=WriteStateChunk(os,0x10,SFMDATA);
+	if(SPostSave) SPostSave();
+
+	size_t len = memory_savestate.size();
+
+	if(len != totalsize)
+	{
+		FCEUD_PrintError("sanity violation: len != totalsize");
+		return false;
+	}
+
+	int maxDstSize = LZ4_compressBound((int)len);
+	if (lz4_compress_buf.size() < (size_t)maxDstSize) lz4_compress_buf.resize(maxDstSize);
+
+	int compressedSize = LZ4_compress_fast(
+		(const char*)memory_savestate.buf(),
+		(char*)lz4_compress_buf.data(),
+		(int)len,
+		maxDstSize,
+		compressionLevel > 0 ? compressionLevel : 1
+	);
+	
+	if (compressedSize <= 0) {
+		return false;
+	}
+
+	uint8 header[8];
+	FCEU_en32lsb(header, totalsize);
+	FCEU_en32lsb(header+4, compressedSize);
+
+	outstream->fwrite((char*)header,8);
+	outstream->fwrite((char*)lz4_compress_buf.data(),compressedSize);
+
+	return true;
+}
+
+
 void FCEUSS_Save(const char *fname, bool display_message)
 {
 	EMUFILE* st = 0;
@@ -701,6 +758,72 @@ bool FCEUSS_LoadFP(EMUFILE* is, ENUM_SSLOADPARAMS params)
 	//if(read_sfcpuc && stateversion<9500)
 	//	X.IRQlow=0;
 
+	if(GameStateRestore)
+	{
+		GameStateRestore(stateversion);
+	}
+	if (x)
+	{
+		FCEUPPU_LoadState(stateversion);
+		FCEUSND_LoadState(stateversion);
+		x=FCEUMOV_PostLoad();
+	} else if (backup)
+	{
+		msBackupSavestate.fseek(0,SEEK_SET);
+		FCEUSS_LoadFP(&msBackupSavestate,SSLOADPARAM_NOBACKUP);
+	}
+
+	return x;
+}
+
+bool FCEUSS_LoadFP_LZ4(EMUFILE* is, ENUM_SSLOADPARAMS params)
+{
+	if(!is) return false;
+
+	bool backup = (params == SSLOADPARAM_BACKUP);
+	EMUFILE_MEMORY msBackupSavestate;
+	if(backup)
+	{
+		FCEUSS_SaveMS_LZ4(&msBackupSavestate,Z_NO_COMPRESSION);
+	}
+
+	uint8 header[8];
+	is->fread((char*)&header,8);
+
+	size_t totalsize  = FCEU_de32lsb(header);
+	int comprlen = FCEU_de32lsb(header + 4);
+
+	if ((memory_savestate.get_vec())->size() < totalsize)
+		(memory_savestate.get_vec())->resize(totalsize);
+	memory_savestate.set_len(totalsize);
+	memory_savestate.unfail();
+	memory_savestate.fseek(0, SEEK_SET);
+
+	if (lz4_compress_buf.size() < (size_t)comprlen) lz4_compress_buf.resize(comprlen);
+	is->fread(lz4_compress_buf.data(), comprlen);
+
+	int decompressedSize = LZ4_decompress_safe(
+		(const char*)lz4_compress_buf.data(),
+		(char*)memory_savestate.buf(),
+		comprlen,
+		(int)totalsize
+	);
+
+	if (decompressedSize <= 0 || (size_t)decompressedSize != totalsize)
+	{
+		if(backup)
+		{
+			msBackupSavestate.fseek(0,SEEK_SET);
+			FCEUSS_LoadFP(&msBackupSavestate,SSLOADPARAM_NOBACKUP);
+		}
+		return false;
+	}
+
+	FCEUMOV_PreLoad();
+
+	bool x = (ReadStateChunks(&memory_savestate, totalsize) != 0);
+
+	int stateversion = 0;
 	if(GameStateRestore)
 	{
 		GameStateRestore(stateversion);

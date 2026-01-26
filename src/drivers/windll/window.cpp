@@ -196,7 +196,8 @@ string gettingstartedhelp = "Gettingstarted";//Getting Started
 //********************************************************************************
 void SetMainWindowText()
 {
-	string str = FCEU_NAME_AND_VERSION;
+	return;
+	string str = "";
 	if (newppu)
 		str.append(" (New PPU)");
 	if (GameInfo)
@@ -1161,7 +1162,7 @@ bool ALoad(const char *nameo, char* innerFilename, bool silent)
 	}
 	else
 	{
-		SetWindowText(hAppWnd, FCEU_NAME_AND_VERSION);	//adelikat: If game fails to load while a previous one was open, the previous would have been closed, so reflect that in the window caption
+		// SetWindowText(hAppWnd, FCEU_NAME_AND_VERSION);	//adelikat: If game fails to load while a previous one was open, the previous would have been closed, so reflect that in the window caption
 		return false;
 	}
 	
@@ -2762,7 +2763,7 @@ int CreateMainWindow(int ishidden)
 	hAppWnd = CreateWindowEx(
 		0,
 		"FCEUXWindowClass",
-		FCEU_NAME_AND_VERSION,
+		"",
 		WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS,  /* Style */
 		MainWindow_wndx,
 		MainWindow_wndy,

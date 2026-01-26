@@ -306,8 +306,8 @@ void cfg_NewToOld(CFGSTRUCT *cfgst)
 		else
 		{
 			//string data
-			if(*(char*)cfgst[x].ptr)
-				free(cfgst[x].ptr);
+			if(*(char**)cfgst[x].ptr)
+				free(*(char**)cfgst[x].ptr);
 			std::string& str = cfgmap[cfgst[x].name];
 			if(str == "")
 				*(char**)cfgst[x].ptr = 0;
