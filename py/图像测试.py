@@ -6,7 +6,7 @@ import PIL.Image
 
 fceux = FCEuxDLL()
 
-rom_path = "1.nes"
+rom_path = "res/1.nes"
 fceux.run_rom(rom_path)
 # 高精度时间
 start_time = time.perf_counter()

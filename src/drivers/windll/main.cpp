@@ -251,7 +251,8 @@ HWND DoInstantiatedExitWindow;
 
 
 uint8 FCEU_SharedMemReadJoypad(int which, uint8 joyl) {
-	if (which >= 0 && which < 4) {
+	if(consolePlayerInputs[which])
+	{
 		return consolePlayerInputs[which] | joyl;
 	}
 	return joyl;
@@ -1628,6 +1629,7 @@ extern "C" {
 
 	__declspec(dllexport) int set_input(int port, uint8_t input) {
 		if (port >= 0 && port < 4) {
+			printf("set_input %d %d\n", port, input);
 			consolePlayerInputs[port] = input;
 			return 0;
 		}

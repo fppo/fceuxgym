@@ -4,7 +4,7 @@ import os
 
 fceux = FCEuxDLL()
 
-rom_path1 = "1.nes"
+rom_path = "res/1.nes"
 fceux.run_rom(rom_path1)
 fceux.show_window()
 while True:
