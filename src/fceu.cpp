@@ -901,6 +901,18 @@ void FCEUI_Emulate(uint8 **pXBuf, int32 **SoundBuf, int32 *SoundBufSize, int ski
 		ProcessSubtitles();
 }
 
+void FCEUI_Emulate_simple(uint8 **pXBuf, int32 **SoundBuf, int32 *SoundBufSize, int skip) {
+	FCEU_UpdateInput();
+	FCEUPPU_Loop(skip);
+
+	timestampbase += timestamp;
+	timestamp = 0;
+	soundtimestamp = 0;
+
+	*pXBuf =  0;
+	*SoundBuf = 0;
+	*SoundBufSize = 0;
+}
 void FCEUI_CloseGame(void) {
 	if (!FCEU_IsValidUI(FCEUI_CLOSEGAME))
 		return;

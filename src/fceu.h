@@ -172,6 +172,8 @@ extern uint8 vsdip;
 #define JOY_LEFT        0x40
 #define JOY_RIGHT       0x80
 
+uint8 FCEU_SharedMemReadJoypad(int which, uint8 joyl);
+
 #define LOADER_INVALID_FORMAT   0
 #define LOADER_OK               1
 #define LOADER_HANDLED_ERROR    2

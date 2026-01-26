@@ -40,13 +40,13 @@ CONFIGS = {
         'type': 'dll',
         'arch': 'x64',
         'output_dir': 'build/DLL_x64',
-        'includes': ['.', 'vc/userconfig', 'vc/defaultconfig', 'src/drivers/win/zlib', 'src/drivers/win/directx/x64', 'src', 'src/drivers/win/lua/include', 'userconfig', 'defaultconfig'],
+        'includes': ['.', 'vc/userconfig', 'vc/defaultconfig', 'src/drivers/windll/zlib', 'src/drivers/windll/directx/x64', 'src', 'src/drivers/windll/lua/include', 'userconfig', 'defaultconfig'],
         'defines': ['WIN32', 'WIN64', 'MSVC', '_CRT_SECURE_NO_DEPRECATE', '_WIN32_WINDOWS=0x0410', 'WINVER=0x0410', 'NETWORK', 'LSB_FIRST', 'FCEUDEF_DEBUGGER', '_USE_SHARED_MEMORY_', 'NOMINMAX', 'HAS_vsnprintf', '_S9XLUA_H', 'NDEBUG', 'FCEUDLL_EXPORTS'],
         'runtime': 'MultiThreaded',
         'optimize': True,
         'subsystem': 'windows',
         'libs': ['comctl32.lib', 'ws2_32.lib', 'vfw32.lib', 'winmm.lib', 'htmlhelp.lib', 'psapi.lib', 'mpr.lib', 'lua51.lib', 'luaperks.lib', 'user32.lib', 'gdi32.lib', 'comdlg32.lib', 'uxtheme.lib', 'dwmapi.lib', 'advapi32.lib', 'shell32.lib', 'ole32.lib', 'oleaut32.lib', 'shlwapi.lib', 'ddraw.lib', 'dinput.lib', 'dxguid.lib', 'winspool.lib'],
-        'libpath': ['src/drivers/win/lua/x64', 'src/drivers/win/directx/x64'],
+        'libpath': ['src/drivers/windll/lua/x64', 'src/drivers/windll/directx/x64'],
     },
 }
 

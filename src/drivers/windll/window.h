@@ -25,16 +25,15 @@ HWND GetMainHWND();
 
 void SetMainWindowText();
 void HideFWindow(int h);
-void SetMainWindowStuff();
+void SetMainWindowStuff(int ishidden = 0);
 int GetClientAbsRect(LPRECT lpRect);
 void FixWXY(int pref, bool shift_held = false);
 void ByebyeWindow();
 void DoTimingConfigFix();
-int CreateMainWindow();
+int CreateMainWindow(int ishidden = 0);
 void UpdateCheckedMenuItems();
 void LoadNewGamey(HWND hParent, const char *initialdir);
 int BrowseForFolder(HWND hParent, const char *htext, char *buf);
-void SetMainWindowStuff();
 void GetMouseData(uint32 (&md)[3]);
 void GetMouseRelative(int32 (&md)[3]);
 //void ChangeMenuItemText(int menuitem, string text);

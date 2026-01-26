@@ -109,6 +109,7 @@ bool FCEUI_Initialize();
 
 //Emulates a frame.
 void FCEUI_Emulate(uint8 **, int32 **, int32 *, int);
+void FCEUI_Emulate_simple(uint8 **, int32 **, int32 *, int);
 
 //Closes currently loaded game
 void FCEUI_CloseGame(void);

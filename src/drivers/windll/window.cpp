@@ -2717,7 +2717,7 @@ void ByebyeWindow()
 
 /// reates the main window.
 /// @return Flag that indicates failure (0) or success (1)
-int CreateMainWindow()
+int CreateMainWindow(int ishidden)
 {
 	WNDCLASSEX winclass;
 	RECT tmp;
@@ -2776,12 +2776,12 @@ int CreateMainWindow()
 	//CenterWindowOnScreen(hAppWnd);
 	DragAcceptFiles(hAppWnd, 1);
 
-	SetMainWindowStuff();
+	SetMainWindowStuff(ishidden);
 
 	return 1;
 }
 
-void SetMainWindowStuff()
+void SetMainWindowStuff(int ishidden)
 {
 	RECT tmp;
 
@@ -2792,7 +2792,7 @@ void SetMainWindowStuff()
 		winwidth = tmp.right - tmp.left;
 		winheight = tmp.bottom - tmp.top;
 
-		ShowWindow(hAppWnd, SW_SHOWMAXIMIZED);
+		ShowWindow(hAppWnd, ishidden ? SW_HIDE : SW_SHOWMAXIMIZED);
 	} else
 	{
 		RECT srect;
@@ -2827,7 +2827,7 @@ void SetMainWindowStuff()
 		winwidth = srect.right;
 		winheight = srect.bottom;
 
-		ShowWindow(hAppWnd, SW_SHOWNORMAL);
+		ShowWindow(hAppWnd, ishidden ? SW_HIDE : SW_SHOWNORMAL);
 	}
 
 	if (eoptions & EO_BESTFIT && !windowedfailed)

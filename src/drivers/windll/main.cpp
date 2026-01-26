@@ -40,6 +40,10 @@ extern "C" { FILE __iob_func[3] = { *stdin,*stdout,*stderr }; }
 #undef uint8
 
 #include <fstream>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 #include "../../version.h"
 #include "../../types.h"
@@ -75,6 +79,7 @@ extern "C" { FILE __iob_func[3] = { *stdin,*stdout,*stderr }; }
 #include "sound.h"
 #include "wave.h"
 #include "video.h"
+#include "../../ppu.h"
 #include "utils/xstring.h"
 #include <string.h>
 #include "taseditor.h"
@@ -181,6 +186,28 @@ HWND hAppWnd = 0;
 
 uint32 goptions = GOO_DISABLESS;
 
+// 当前帧缓冲区指针
+static uint8* currentGfx = nullptr;
+
+// 输入控制相关全局变量
+static std::atomic<bool> consoleInputEnabled{false}; // 控制台输入启用标志
+static uint8_t consolePlayerInputs[4] = {0}; // 控制台设置的4个玩家的控制输入（每个玩家1字节）
+
+// ROM加载完成同步变量
+static std::atomic<bool> romLoaded{false}; // ROM是否已加载完成
+static std::mutex romLoadMutex;
+static std::condition_variable romLoadCV;
+
+// 窗口显示控制标志
+static std::atomic<bool> requestHideWindow{false}; // 请求隐藏窗口
+static std::atomic<bool> requestShowWindow{false}; // 请求显示窗口
+
+// 单步执行控制变量
+static std::atomic<int> remainingFrames{0}; // 剩余单步执行帧数
+static std::mutex stepMutex;
+static std::condition_variable stepCV;
+static std::atomic<bool> stepCompleted{false}; // 单步执行完成标志
+
 // Some timing-related variables (now ignored).
 int maxconbskip = 32;          //Maximum consecutive blit skips.
 int ffbskip = 32;              //Blit skips per blit when FF-ing
@@ -221,6 +248,14 @@ int BotFramesSkipped = 0;
 bool SingleInstanceOnly=false; // Enable/disable option
 bool DoInstantiatedExit=false;
 HWND DoInstantiatedExitWindow;
+
+
+uint8 FCEU_SharedMemReadJoypad(int which, uint8 joyl) {
+	if (which >= 0 && which < 4) {
+		return consolePlayerInputs[which] | joyl;
+	}
+	return joyl;
+}
 
 // Internal functions
 void SetDirs()
@@ -923,8 +958,31 @@ doloopy:
 	UpdateFCEUWindow();
 	if(GameInfo)
 	{
+		// 通知ROM已加载完成
+		romLoaded.store(true);
+		romLoadCV.notify_all();
+		
 		while(GameInfo)
 		{
+			// 处理窗口显示/隐藏请求
+			if (requestHideWindow.load()) {
+				printf("处理窗口隐藏请求\n");
+				if (hAppWnd) {
+					ShowWindow(hAppWnd, SW_HIDE);
+					timeEndPeriod(1);
+				}
+				requestHideWindow.store(false);
+			}
+			
+			if (requestShowWindow.load()) {
+				printf("处理窗口显示请求\n");
+				if (hAppWnd) {
+					ShowWindow(hAppWnd, SW_SHOW);
+					timeBeginPeriod(1);
+				}
+				requestShowWindow.store(false);
+			}
+			
 	        uint8 *gfx=0; ///contains framebuffer
 			int32 *sound=0; ///contains sound data buffer
 			int32 ssize=0; ///contains sound samples count
@@ -942,17 +1000,29 @@ doloopy:
 					if (muteTurbo) skippy = 2;	//If mute turbo is on, we want to bypass sound too, so set it to 2
 						else skippy = 1;				//Else set it to 1 to just frameskip
 				}
-
 			}
 			else skippy = 0;
 
 			if(FCEU_LuaFrameskip())
 				skippy = true;
 
-			FCEUI_Emulate(&gfx, &sound, &ssize, skippy); //emulate a single frame
-			FCEUD_Update(gfx, sound, ssize); //update displays and debug tools
+			if (remainingFrames > 0) {
+				remainingFrames--;
+				if (remainingFrames == 0) {
+					FCEUI_Emulate(&gfx, &sound, &ssize, 2);
+					currentGfx = gfx;
+					stepCompleted.store(true);
+					stepCV.notify_all();
+				} else {
+					FCEUI_Emulate_simple(&gfx, &sound, &ssize, 2);
+					currentGfx = gfx;
+				}
+			} else {
+				FCEUI_Emulate(&gfx, &sound, &ssize, skippy);
+				currentGfx = gfx;
+				FCEUD_Update(gfx, sound, ssize);
+			}
 
-			//mbg 6/30/06 - close game if we were commanded to by calls nested in FCEUI_Emulate()
 			if (closeGame)
 			{
 				FCEUI_CloseGame();
@@ -969,6 +1039,267 @@ doloopy:
 	if(!exiting)
 		goto doloopy;
 
+	DriverKill();
+	timeEndPeriod(1);
+	FCEUI_Kill();
+
+	delete debugSystem;
+
+	return(0);
+}
+
+int main1(int argc,char *argv[])
+{
+	{
+#ifdef MULTITHREAD_STDLOCALE_WORKAROUND
+		// Note: there's a known threading bug regarding std::locale with MSVC according to
+		// http://connect.microsoft.com/VisualStudio/feedback/details/492128/std-locale-constructor-modifies-global-locale-via-setlocale
+		int iPreviousFlag = ::_configthreadlocale(_ENABLE_PER_THREAD_LOCALE);
+#endif
+		using std::locale;
+		locale::global(locale(locale::classic(), "", locale::collate | locale::ctype));
+
+#ifdef MULTITHREAD_STDLOCALE_WORKAROUND
+		if (iPreviousFlag > 0 )
+			::_configthreadlocale(iPreviousFlag);
+#endif
+	}
+
+	SetThreadAffinityMask(GetCurrentThread(),1);
+
+	//printf("%08x",opsize); //AGAIN?!
+
+	char *t;
+
+	initArchiveSystem();
+
+	if(timeBeginPeriod(1) != TIMERR_NOERROR)
+	{
+		AddLogText("Error setting timer granularity to 1ms.", DO_ADD_NEWLINE);
+	}
+
+	InitCommonControls();
+
+	if(!FCEUI_Initialize())
+	{
+		do_exit();
+		return 1;
+	}
+
+	ApplyDefaultCommandMapping();
+
+	fceu_hInstance = GetModuleHandle(0);
+	fceu_hAccel = LoadAccelerators(fceu_hInstance,MAKEINTRESOURCE(IDR_ACCELERATOR1));
+
+	// Get the base directory
+	GetBaseDirectory();
+
+	// load fceux.cfg
+	sprintf(TempArray,"%s\\%s",BaseDirectory.c_str(),cfgFile.c_str());
+	LoadConfig(TempArray);
+	//initDirectories();
+
+	// Parse the commandline arguments
+	t = ParseArgies(argc, argv);
+
+	if(PlayInput)
+		PlayInputFile = fopen(PlayInput, "rb");
+	if(DumpInput)
+		DumpInputFile = fopen(DumpInput, "wb");
+
+	extern int disableBatteryLoading;
+	if(PlayInput || DumpInput)
+		disableBatteryLoading = 1;
+
+	int saved_pal_setting = !!pal_emulation;
+
+	if (ConfigToLoad)
+	{
+		// alternative config file specified
+		cfgFile.assign(ConfigToLoad);
+		// Load the config information
+		sprintf(TempArray,"%s\\%s",BaseDirectory.c_str(),cfgFile.c_str());
+		LoadConfig(TempArray);
+	}
+
+	//Bleh, need to find a better place for this.
+	{
+        FCEUI_SetGameGenie(genie!=0);
+
+        fullscreen = !!fullscreen;
+        soundo = !!soundo;
+        frame_display = !!frame_display;
+        allowUDLR = !!allowUDLR;
+        pauseAfterPlayback = !!pauseAfterPlayback;
+        closeFinishedMovie = !!closeFinishedMovie;
+        EnableBackgroundInput = !!EnableBackgroundInput;
+		dendy = !!dendy;
+
+		KeyboardSetBackgroundAccess(EnableBackgroundInput!=0);
+		JoystickSetBackgroundAccess(EnableBackgroundInput!=0);
+
+        FCEUI_SetSoundVolume(soundvolume);
+		FCEUI_SetSoundQuality(soundquality);
+		FCEUI_SetTriangleVolume(soundTrianglevol);
+		FCEUI_SetSquare1Volume(soundSquare1vol);
+		FCEUI_SetSquare2Volume(soundSquare2vol);
+		FCEUI_SetNoiseVolume(soundNoisevol);
+		FCEUI_SetPCMVolume(soundPCMvol);
+	}
+
+	//Since a game doesn't have to be loaded before the GUI can be used, make
+	//sure the temporary input type variables are set.
+	ParseGIInput(NULL);
+
+	// Initialize default directories
+	CreateDirs();
+	SetDirs();
+
+	DoVideoConfigFix();
+	DoTimingConfigFix();
+
+	//restore the last user-set palette (cpalette and cpalette_count are preserved in the config file)
+	if(eoptions & EO_CPALETTE)
+	{
+		FCEUI_SetUserPalette(cpalette,cpalette_count);
+	}
+
+	if(!t)
+	{
+		fullscreen=0;
+	}
+
+	CreateMainWindow(1);
+
+	if (!InitDInput())
+	{
+		do_exit();
+		return 1;
+	}
+
+	if (!DriverInitialize())
+	{
+		do_exit();
+		return 1;
+	}
+	UpdateMenuHotkeys(FCEUMENU_MAIN);
+
+	debugSystem = new DebugSystem();
+	debugSystem->init();
+
+	InitSpeedThrottle();
+
+	if (t)
+	{
+		ALoad(t);
+	} else
+	{
+		if (AutoResumePlay && romNameWhenClosingEmulator && romNameWhenClosingEmulator[0])
+			ALoad(romNameWhenClosingEmulator, 0, true);
+		if (eoptions & EO_FOAFTERSTART)
+			LoadNewGamey(hAppWnd, 0);
+	}
+
+	if (PAL && pal_setting_specified && !dendy_setting_specified)
+		dendy = 0;
+
+	if (PAL && !dendy)
+        FCEUI_SetRegion(1, pal_setting_specified);
+	else if (dendy)
+        FCEUI_SetRegion(2, dendy_setting_specified);
+	else
+        FCEUI_SetRegion(0, pal_setting_specified || dendy_setting_specified);
+
+	if(PaletteToLoad)
+	{
+		SetPalette(PaletteToLoad);
+		free(PaletteToLoad);
+		PaletteToLoad = NULL;
+	}
+
+	if(GameInfo && MovieToLoad)
+	{
+		//switch to readonly mode if the file is an archive
+		if(FCEU_isFileInArchive(MovieToLoad))
+				replayReadOnlySetting = true;
+
+		FCEUI_LoadMovie(MovieToLoad, replayReadOnlySetting, replayStopFrameSetting != 0);
+		FCEUX_LoadMovieExtras(MovieToLoad);
+		free(MovieToLoad);
+		MovieToLoad = NULL;
+	}
+	if(GameInfo && StateToLoad)
+	{
+		FCEUI_LoadState(StateToLoad);
+		free(StateToLoad);
+		StateToLoad = NULL;
+	}
+	if(GameInfo && LuaToLoad)
+	{
+		FCEU_LoadLuaCode(LuaToLoad);
+		free(LuaToLoad);
+		LuaToLoad = NULL;
+	}
+
+	//Initiates AVI capture mode, will set up proper settings, and close FCUEX once capturing is finished
+	if(AVICapture && AviToLoad)	//Must be used in conjunction with AviToLoad
+	{
+		//We want to disable flags that will pause the emulator
+		PauseAfterLoad = 0;
+		pauseAfterPlayback = 0;
+		KillFCEUXonFrame = AVICapture;
+	}
+
+	if(AviToLoad)
+	{
+		FCEUI_AviBegin(AviToLoad);
+		free(AviToLoad);
+		AviToLoad = NULL;
+	}
+
+	if (MemWatchLoadOnStart) CreateMemWatch();
+	if (PauseAfterLoad) FCEUI_ToggleEmulationPause();
+	SetAutoFirePattern(AFon, AFoff);
+	UpdateCheckedMenuItems();
+doloopy:
+	UpdateFCEUWindow();
+	ShowWindow(hAppWnd, SW_HIDE);
+	return(0);
+}
+
+int main2(int remainingFrames)
+{
+	while(GameInfo)
+	{
+		uint8 *gfx=0;
+		int32 *sound=0;
+		int32 ssize=0;
+
+		if (remainingFrames > 0) {
+			remainingFrames--;
+			if (remainingFrames == 0) {
+				FCEUI_Emulate(&gfx, &sound, &ssize, 2);
+				currentGfx = gfx;
+				break;
+			} else {
+				FCEUI_Emulate_simple(&gfx, &sound, &ssize, 2);
+				currentGfx = gfx;
+			}
+		} else {
+			FCEUI_Emulate(&gfx, &sound, &ssize, skippy);
+			currentGfx = gfx;
+			FCEUD_Update(gfx, sound, ssize);
+			break;
+		}
+	}
+	return(0);
+}
+
+int main3()
+{
+	FCEUI_CloseGame();
+	GameInfo = NULL;
+	RedrawWindow(hAppWnd,0,0,RDW_ERASE|RDW_INVALIDATE);
 	DriverKill();
 	timeEndPeriod(1);
 	FCEUI_Kill();
@@ -1072,25 +1403,6 @@ void FCEUD_Update(uint8 *XBuf, int32 *Buffer, int Count)
 	if(!JustFrameAdvanced && FCEUI_EmulationPaused()) {
 		Sleep(50);
 	}
-
-	//while(EmulationPaused==1 && inDebugger)
-	//{
-	//	Sleep(50);
-	//	BlockingCheck();
-	//	FCEUD_UpdateInput(); //should this update the CONTROLS??? or only the hotkeys etc?
-	//}
-
-	////so, we're not paused anymore.
-
-	////something of a hack, but straightforward:
-	////if we were paused, but not in the debugger, then unpause ourselves and step.
-	////this is so that the cpu won't cut off execution due to being paused, but the debugger _will_
-	////cut off execution as soon as it makes it into the main cpu cycle loop
-	//if(FCEUI_EmulationPaused() && !inDebugger) {
-	//	FCEUI_ToggleEmulationPause();
-	//	FCEUI_Debugger().step = 1;
-	//	FCEUD_DebugBreakpoint();
-	//}
 
 	//make sure to update the input once per frame
 	FCEUD_UpdateInput();
@@ -1207,15 +1519,79 @@ std::string GetRomPath(bool force)
 	return Rom;
 }
 
-
 extern "C" {
-	__declspec(dllexport) int add(int a, int b) {
-		return a + b;
+	__declspec(dllexport) int run_rom(char *rompath) {
+		const char* argv[] = {"fceux", rompath};
+		main1(2, (char**)argv);
+		return 0;
 	}
-	
-	__declspec(dllexport) int run_rom() {
-		const char* argv[] = {"fceux", "1.nes"};
-		return main(2, (char**)argv);
+
+	__declspec(dllexport) int close_rom() {
+		main3();
+		return 0;
 	}
-	
+
+	__declspec(dllexport) uint8 * read_memory() {
+		return RAM;
+	}
+
+	__declspec(dllexport) int hide_window() {
+		ShowWindow(hAppWnd, SW_HIDE);
+		timeEndPeriod(1);
+		return 0;
+	}
+
+	__declspec(dllexport) int show_window() {
+		ShowWindow(hAppWnd, SW_SHOW);
+		timeBeginPeriod(1);
+		return 0;
+	}
+
+	__declspec(dllexport) uint8 * read_screen() {
+		return currentGfx;
+	}
+
+	__declspec(dllexport) int step_frame(int frames) {
+		main2(frames);
+		return 0;
+	}
+
+	__declspec(dllexport) int save_state(const char *filename) {
+		if (GameInfo) {
+			FCEUI_SaveState(filename);
+			return 0;
+		}
+		return -1;
+	}
+
+	__declspec(dllexport) int load_state(const char *filename) {
+		if (GameInfo) {
+			FCEUI_LoadState(filename);
+			return 0;
+		}
+		return -1;
+	}
+
+	__declspec(dllexport) int set_input(int port, uint8_t input) {
+		if (port >= 0 && port < 4) {
+			consolePlayerInputs[port] = input;
+			return 0;
+		}
+		return -1;
+	}
+
+	__declspec(dllexport) int clear_input() {
+		for (int i = 0; i < 4; i++) {
+			consolePlayerInputs[i] = 0;
+		}
+		return 0;
+	}
+
+	__declspec(dllexport) int get_scroll(int *scroll_x, int *scroll_y) {
+		if (scroll_x && scroll_y) {
+			ppu_getScroll(*scroll_x, *scroll_y);
+			return 0;
+		}
+		return -1;
+	}
 }
