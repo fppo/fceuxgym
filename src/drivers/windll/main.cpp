@@ -90,6 +90,7 @@ extern bool taseditorEnableAcceleratorKeys;
 
 //---------------------------
 //mbg merge 6/29/06 - new aboutbox
+void InitInputPorts(bool fourscore);
 
 #if defined(MSVC)
  #ifdef _M_X64
@@ -186,30 +187,24 @@ HWND hAppWnd = 0;
 
 uint32 goptions = GOO_DISABLESS;
 
-// ��ǰ֡������ָ��
 static uint8* currentGfx = nullptr;
 
-// 当前帧RGB图像指针
 static uint8* currentGfxPal = nullptr;
 
-// ����������ȫ�ֱ���
-static std::atomic<bool> consoleInputEnabled{false}; // ����̨�������ñ�־
-static uint8_t consolePlayerInputs[4] = {0}; // ����̨���õ�4����ҵĿ������루ÿ�����1�ֽڣ�
+static std::atomic<bool> consoleInputEnabled{false};
+static uint8_t consolePlayerInputs[4] = {0};
 
-// ROM�������ͬ������
-static std::atomic<bool> romLoaded{false}; // ROM�Ƿ��Ѽ������
+static std::atomic<bool> romLoaded{false};
 static std::mutex romLoadMutex;
 static std::condition_variable romLoadCV;
 
-// ������ʾ���Ʊ�־
-static std::atomic<bool> requestHideWindow{false}; // �������ش���
-static std::atomic<bool> requestShowWindow{false}; // ������ʾ����
+static std::atomic<bool> requestHideWindow{false};
+static std::atomic<bool> requestShowWindow{false};
 
-// ����ִ�п��Ʊ���
-static std::atomic<int> remainingFrames{0}; // ʣ�൥��ִ��֡��
+static std::atomic<int> remainingFrames{0};
 static std::mutex stepMutex;
 static std::condition_variable stepCV;
-static std::atomic<bool> stepCompleted{false}; // ����ִ����ɱ�־
+static std::atomic<bool> stepCompleted{false};
 
 // Some timing-related variables (now ignored).
 int maxconbskip = 32;          //Maximum consecutive blit skips.
@@ -814,6 +809,7 @@ int main(int argc,char *argv[])
 	//Since a game doesn't have to be loaded before the GUI can be used, make
 	//sure the temporary input type variables are set.
 	ParseGIInput(NULL);
+	InitInputPorts((eoptions & EO_FOURSCORE)!=0);
 
 	// Initialize default directories
 	CreateDirs();
@@ -966,31 +962,8 @@ doloopy:
 	UpdateFCEUWindow();
 	if(GameInfo)
 	{
-		// ֪ͨROM�Ѽ������
-		romLoaded.store(true);
-		romLoadCV.notify_all();
-		
 		while(GameInfo)
 		{
-			// ����������ʾ/��������
-			if (requestHideWindow.load()) {
-				printf("����������������\n");
-				if (hAppWnd) {
-					ShowWindow(hAppWnd, SW_HIDE);
-					timeEndPeriod(1);
-				}
-				requestHideWindow.store(false);
-			}
-			
-			if (requestShowWindow.load()) {
-				printf("����������ʾ����\n");
-				if (hAppWnd) {
-					ShowWindow(hAppWnd, SW_SHOW);
-					timeBeginPeriod(1);
-				}
-				requestShowWindow.store(false);
-			}
-			
 	        uint8 *gfx=0; ///contains framebuffer
 			int32 *sound=0; ///contains sound data buffer
 			int32 ssize=0; ///contains sound samples count
@@ -1008,29 +981,17 @@ doloopy:
 					if (muteTurbo) skippy = 2;	//If mute turbo is on, we want to bypass sound too, so set it to 2
 						else skippy = 1;				//Else set it to 1 to just frameskip
 				}
+
 			}
 			else skippy = 0;
 
 			if(FCEU_LuaFrameskip())
 				skippy = true;
 
-			if (remainingFrames > 0) {
-				remainingFrames--;
-				if (remainingFrames == 0) {
-					FCEUI_Emulate(&gfx, &sound, &ssize, 2);
-					currentGfx = gfx;
-					stepCompleted.store(true);
-					stepCV.notify_all();
-				} else {
-					FCEUI_Emulate_simple(&gfx, &sound, &ssize, 2);
-					currentGfx = gfx;
-				}
-			} else {
-				FCEUI_Emulate(&gfx, &sound, &ssize, skippy);
-				currentGfx = gfx;
-				FCEUD_Update(gfx, sound, ssize);
-			}
+			FCEUI_Emulate(&gfx, &sound, &ssize, skippy); //emulate a single frame
+			FCEUD_Update(gfx, sound, ssize); //update displays and debug tools
 
+			//mbg 6/30/06 - close game if we were commanded to by calls nested in FCEUI_Emulate()
 			if (closeGame)
 			{
 				FCEUI_CloseGame();
@@ -1154,6 +1115,7 @@ int main1(int argc,char *argv[])
 	//Since a game doesn't have to be loaded before the GUI can be used, make
 	//sure the temporary input type variables are set.
 	ParseGIInput(NULL);
+	InitInputPorts((eoptions & EO_FOURSCORE)!=0);
 
 	DoVideoConfigFix();
 	DoTimingConfigFix();

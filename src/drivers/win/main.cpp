@@ -308,6 +308,9 @@ void CreateDirs()
 	DefaultDirectoryWalker(DirectoryCreator);
 }
 
+uint8 FCEU_SharedMemReadJoypad(int which, uint8 joyl) {
+	return joyl;
+}
 
 
 //Fills the BaseDirectory string
