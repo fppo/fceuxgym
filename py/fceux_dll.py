@@ -68,6 +68,9 @@ class FCEuxDLL:
 
         self.dll.load_config.argtypes = [c_char_p]
         self.dll.load_config.restype = c_int
+
+        self.dll.read_screen_pal.argtypes = []
+        self.dll.read_screen_pal.restype = POINTER(c_uint8)
         
     # 运行指定ROM文件，初始化模拟器
     def run_rom(self, rom_path):
@@ -114,6 +117,14 @@ class FCEuxDLL:
             screen_np[~mask] = 0
             screen_np = (screen_np - 128) * 2
             return screen_np
+        return None
+
+    # 获取屏幕图像，已上色，RGB 格式
+    def read_screen_pal(self):
+        ret = self.dll.read_screen_pal()
+        if ret:
+            img = np.ctypeslib.as_array(ret, shape=(256, 256, 3))
+            return img
         return None
 
     # 大于0时执行指定帧数，图形不渲染到窗口，小于0时，执行1帧，图形渲染到窗口

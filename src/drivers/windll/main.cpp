@@ -189,6 +189,9 @@ uint32 goptions = GOO_DISABLESS;
 // ��ǰ֡������ָ��
 static uint8* currentGfx = nullptr;
 
+// 当前帧RGB图像指针
+static uint8* currentGfxPal = nullptr;
+
 // ����������ȫ�ֱ���
 static std::atomic<bool> consoleInputEnabled{false}; // ����̨�������ñ�־
 static uint8_t consolePlayerInputs[4] = {0}; // ����̨���õ�4����ҵĿ������루ÿ�����1�ֽڣ�
@@ -251,6 +254,7 @@ HWND DoInstantiatedExitWindow;
 
 
 uint8 FCEU_SharedMemReadJoypad(int which, uint8 joyl) {
+	return ;
 	if(consolePlayerInputs[which])
 	{
 		return consolePlayerInputs[which] | joyl;
@@ -645,6 +649,10 @@ static void DriverKill(void)
 
 void do_exit()
 {
+	if (currentGfxPal) {
+		delete[] currentGfxPal;
+		currentGfxPal = nullptr;
+	}
 	DriverKill();
 	timeEndPeriod(1);
 	FCEUI_Kill();
@@ -1086,6 +1094,10 @@ int main1(int argc,char *argv[])
 		do_exit();
 		return 1;
 	}
+
+	currentGfxPal = new uint8[256 * 256 * 3];
+	memset(currentGfxPal, 0, 256 * 256 * 3);
+
 
 	ApplyDefaultCommandMapping();
 
@@ -1556,7 +1568,19 @@ extern "C" {
 	}
 
 	__declspec(dllexport) uint8 * read_screen() {
-		return currentGfx;
+		//会裁剪前8行
+		return currentGfx + 256 * 8;
+	}
+
+	__declspec(dllexport) uint8 * read_screen_pal() {
+		for (uint32 i = 0; i < 256 * 224; i++) {
+			uint8 r, g, b;
+			FCEUD_GetPalette(currentGfx[i+256 * 8], &r, &g, &b);
+			currentGfxPal[i * 3] = r;
+			currentGfxPal[i * 3 + 1] = g;
+			currentGfxPal[i * 3 + 2] = b;
+		}
+		return currentGfxPal;
 	}
 
 	__declspec(dllexport) int step_frame(int frames) {
@@ -1629,7 +1653,6 @@ extern "C" {
 
 	__declspec(dllexport) int set_input(int port, uint8_t input) {
 		if (port >= 0 && port < 4) {
-			printf("set_input %d %d\n", port, input);
 			consolePlayerInputs[port] = input;
 			return 0;
 		}

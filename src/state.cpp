@@ -494,27 +494,36 @@ bool FCEUSS_SaveMS_LZ4(EMUFILE* outstream, int compressionLevel)
 		return false;
 	}
 
-	int maxDstSize = LZ4_compressBound((int)len);
-	if (lz4_compress_buf.size() < (size_t)maxDstSize) lz4_compress_buf.resize(maxDstSize);
-
-	int compressedSize = LZ4_compress_fast(
-		(const char*)memory_savestate.buf(),
-		(char*)lz4_compress_buf.data(),
-		(int)len,
-		maxDstSize,
-		compressionLevel > 0 ? compressionLevel : 1
-	);
-	
-	if (compressedSize <= 0) {
-		return false;
-	}
-
 	uint8 header[8];
 	FCEU_en32lsb(header, totalsize);
-	FCEU_en32lsb(header+4, compressedSize);
 
-	outstream->fwrite((char*)header,8);
-	outstream->fwrite((char*)lz4_compress_buf.data(),compressedSize);
+	if (compressionLevel == 0)
+	{
+		FCEU_en32lsb(header+4, totalsize);
+		outstream->fwrite((char*)header,8);
+		outstream->fwrite((char*)memory_savestate.buf(),totalsize);
+	}
+	else
+	{
+		int maxDstSize = LZ4_compressBound((int)len);
+		if (lz4_compress_buf.size() < (size_t)maxDstSize) lz4_compress_buf.resize(maxDstSize);
+
+		int compressedSize = LZ4_compress_fast(
+			(const char*)memory_savestate.buf(),
+			(char*)lz4_compress_buf.data(),
+			(int)len,
+			maxDstSize,
+			compressionLevel
+		);
+		
+		if (compressedSize <= 0) {
+			return false;
+		}
+
+		FCEU_en32lsb(header+4, compressedSize);
+		outstream->fwrite((char*)header,8);
+		outstream->fwrite((char*)lz4_compress_buf.data(),compressedSize);
+	}
 
 	return true;
 }
@@ -799,24 +808,31 @@ bool FCEUSS_LoadFP_LZ4(EMUFILE* is, ENUM_SSLOADPARAMS params)
 	memory_savestate.unfail();
 	memory_savestate.fseek(0, SEEK_SET);
 
-	if (lz4_compress_buf.size() < (size_t)comprlen) lz4_compress_buf.resize(comprlen);
-	is->fread(lz4_compress_buf.data(), comprlen);
-
-	int decompressedSize = LZ4_decompress_safe(
-		(const char*)lz4_compress_buf.data(),
-		(char*)memory_savestate.buf(),
-		comprlen,
-		(int)totalsize
-	);
-
-	if (decompressedSize <= 0 || (size_t)decompressedSize != totalsize)
+	if (comprlen == (int)totalsize)
 	{
-		if(backup)
+		is->fread(memory_savestate.buf(), totalsize);
+	}
+	else
+	{
+		if (lz4_compress_buf.size() < (size_t)comprlen) lz4_compress_buf.resize(comprlen);
+		is->fread(lz4_compress_buf.data(), comprlen);
+
+		int decompressedSize = LZ4_decompress_safe(
+			(const char*)lz4_compress_buf.data(),
+			(char*)memory_savestate.buf(),
+			comprlen,
+			(int)totalsize
+		);
+
+		if (decompressedSize <= 0 || (size_t)decompressedSize != totalsize)
 		{
-			msBackupSavestate.fseek(0,SEEK_SET);
-			FCEUSS_LoadFP(&msBackupSavestate,SSLOADPARAM_NOBACKUP);
+			if(backup)
+			{
+				msBackupSavestate.fseek(0,SEEK_SET);
+				FCEUSS_LoadFP(&msBackupSavestate,SSLOADPARAM_NOBACKUP);
+			}
+			return false;
 		}
-		return false;
 	}
 
 	FCEUMOV_PreLoad();
