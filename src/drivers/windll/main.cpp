@@ -254,7 +254,6 @@ HWND DoInstantiatedExitWindow;
 
 
 uint8 FCEU_SharedMemReadJoypad(int which, uint8 joyl) {
-	return ;
 	if(consolePlayerInputs[which])
 	{
 		return consolePlayerInputs[which] | joyl;
